@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -6,19 +5,23 @@ import {
   query, doc, deleteDoc, updateDoc 
 } from 'firebase/firestore';
 import { 
-  getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged 
+  getAuth, signInAnonymously, onAuthStateChanged 
 } from 'firebase/auth';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  LineChart, Line, ComposedChart, Cell
+  ComposedChart, Cell
 } from 'recharts';
 import { 
   Users, PhoneCall, TrendingUp, TrendingDown, AlertCircle, 
-  CheckCircle2, Search, Filter, MessageSquare, Video, MapPin, Mail,
+  CheckCircle2, Search, MessageSquare, Video, MapPin, Mail,
   Plus, X, Calendar, DollarSign, FileText, Cloud, CloudOff, Loader2, UserCircle, MoreHorizontal
 } from 'lucide-react';
 
-// --- Firebase Configuration ---
+// ========================================================
+// 1. YOUR FIREBASE CONFIGURATION
+// Replace the placeholder values below with your actual 
+// keys from the Firebase Console (Step 1.5 in the guide).
+// ========================================================
 const firebaseConfig = {
   apiKey: "AIzaSyDxCp_2bIxRtLRMgh2uNGxj9fyOs1TWXVQ",
   authDomain: "partner-success-tracker.firebaseapp.com",
@@ -29,6 +32,13 @@ const firebaseConfig = {
   measurementId: "G-2D8CMKGHSG"
 };
 
+// 2. INITIALIZE FIREBASE 
+// These lines MUST stay here, outside the App component
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = 'partner-success-tracker-v1'; 
+
 const App = () => {
   const [data, setData] = useState([]);
   const [user, setUser] = useState(null);
@@ -37,10 +47,8 @@ const App = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
   
-  // Persistent Rep Identity
   const [myRepName, setMyRepName] = useState(localStorage.getItem('preferred_rep_name') || '');
   
-  // Form State
   const [formData, setFormData] = useState({
     partner: '',
     rep: localStorage.getItem('preferred_rep_name') || '',
@@ -52,15 +60,11 @@ const App = () => {
     followUp: ''
   });
 
-  // 1. Authentication Lifecycle
   useEffect(() => {
+    // Attempt anonymous sign-in so we can talk to the database
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (err) {
         console.error("Auth error:", err);
       }
@@ -73,18 +77,12 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-time Data Sync
   useEffect(() => {
     if (!user) return;
-
     const collectionPath = collection(db, 'artifacts', appId, 'public', 'data', 'outreach_logs');
-    
     const unsubscribe = onSnapshot(collectionPath, 
       (snapshot) => {
-        const logs = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const sortedLogs = logs.sort((a, b) => new Date(b.date) - new Date(a.date));
         setData(sortedLogs);
         setLoading(false);
@@ -94,21 +92,15 @@ const App = () => {
         setLoading(false);
       }
     );
-
     return () => unsubscribe();
   }, [user]);
 
-  // Fuzzy Match Logic
   const checkSimilarity = (input) => {
-    if (!input || input.length < 3) {
-      setSuggestion(null);
-      return;
-    }
+    if (!input || input.length < 3) { setSuggestion(null); return; }
     const existingPartners = [...new Set(data.map(d => d.partner))];
     const match = existingPartners.find(p => {
       const pNorm = p.toLowerCase().trim();
       const iNorm = input.toLowerCase().trim();
-      // Basic fuzzy check: one contains the other and they aren't identical
       return (pNorm.includes(iNorm) || iNorm.includes(pNorm)) && pNorm !== iNorm;
     });
     setSuggestion(match || null);
@@ -117,11 +109,7 @@ const App = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
-    if (name === 'partner') {
-      checkSimilarity(value);
-    }
-    
+    if (name === 'partner') checkSimilarity(value);
     if (name === 'rep') {
       setMyRepName(value);
       localStorage.setItem('preferred_rep_name', value);
@@ -138,7 +126,6 @@ const App = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user) return;
-
     try {
       const collectionPath = collection(db, 'artifacts', appId, 'public', 'data', 'outreach_logs');
       const newEntry = {
@@ -148,7 +135,6 @@ const App = () => {
         createdAt: new Date().toISOString(),
         userId: user.uid
       };
-      
       await addDoc(collectionPath, newEntry);
       setIsModalOpen(false);
       setFormData({
@@ -163,14 +149,10 @@ const App = () => {
 
   const processedData = useMemo(() => {
     return data.map(item => {
-      const growth = item.salesLast > 0 
-        ? ((item.salesCurrent - item.salesLast) / item.salesLast) * 100 
-        : 0;
+      const growth = item.salesLast > 0 ? ((item.salesCurrent - item.salesLast) / item.salesLast) * 100 : 0;
       const outreachCount = item.type === "None" ? 0 : 1;
-      
       let status = "";
       let statusColor = "";
-      
       if (outreachCount > 0 && growth > 0) {
         status = "Positive Correlation";
         statusColor = "text-[#37b87b] bg-green-50 border-green-100";
@@ -184,7 +166,6 @@ const App = () => {
         status = "Needs Engagement";
         statusColor = "text-red-600 bg-red-50 border-red-100";
       }
-
       return { ...item, growth: growth.toFixed(1), status, statusColor, outreachCount };
     });
   }, [data]);
@@ -203,10 +184,7 @@ const App = () => {
       stats[item.rep].totalGrowth += parseFloat(item.growth);
       stats[item.rep].count += 1;
     });
-    return Object.values(stats).map(s => ({
-      ...s,
-      avgGrowth: (s.totalGrowth / s.count).toFixed(1)
-    }));
+    return Object.values(stats).map(s => ({ ...s, avgGrowth: (s.totalGrowth / s.count).toFixed(1) }));
   }, [processedData]);
 
   const getOutreachIcon = (type) => {
@@ -229,7 +207,6 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans text-black">
-      {/* Header */}
       <div className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-black flex items-center gap-3 uppercase tracking-tight">
@@ -241,11 +218,10 @@ const App = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="hidden md:flex items-center bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm">
             <UserCircle className="w-4 h-4 text-[#37b87b] mr-2" />
-            <span className="text-xs font-bold text-black">
+            <span className="text-xs font-bold text-black uppercase">
               REP: <span className="text-[#37b87b]">{myRepName || 'PENDING'}</span>
             </span>
           </div>
-
           <div className="flex items-center bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm focus-within:ring-2 ring-[#37b87b]">
             <Search className="text-slate-400 w-5 h-5 mr-2" />
             <input 
@@ -256,10 +232,7 @@ const App = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-[#37b87b] hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-bold flex items-center transition-all shadow-md active:scale-95 uppercase text-sm tracking-wide"
-          >
+          <button onClick={() => setIsModalOpen(true)} className="bg-[#37b87b] hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-bold flex items-center transition-all shadow-md active:scale-95 uppercase text-sm tracking-wide">
             <Plus className="w-5 h-5 mr-1" /> Log Activity
           </button>
         </div>
@@ -267,8 +240,6 @@ const App = () => {
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          
-          {/* Summary Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Outreach</p>
@@ -282,17 +253,12 @@ const App = () => {
             </div>
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Base</p>
-              <p className="text-3xl font-black text-black">
-                {[...new Set(data.map(d => d.partner))].length}
-              </p>
+              <p className="text-3xl font-black text-black">{[...new Set(data.map(d => d.partner))].length}</p>
             </div>
           </div>
 
-          {/* Table */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-6 border-b border-slate-100">
-              <h2 className="text-lg font-black uppercase tracking-tight">Team Activity Stream</h2>
-            </div>
+            <div className="p-6 border-b border-slate-100"><h2 className="text-lg font-black uppercase tracking-tight">Team Activity Stream</h2></div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -306,26 +272,16 @@ const App = () => {
                 <tbody className="divide-y divide-slate-100">
                   {filteredData.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-bold text-black">{item.partner}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className={`text-xs font-bold flex items-center gap-2 ${item.rep === myRepName ? 'text-[#37b87b]' : 'text-slate-600'}`}>
-                          {item.rep || 'Unknown'}
-                        </div>
-                      </td>
+                      <td className="px-6 py-4"><div className="font-bold text-black">{item.partner}</div></td>
+                      <td className="px-6 py-4"><div className={`text-xs font-bold ${item.rep === myRepName ? 'text-[#37b87b]' : 'text-slate-600'}`}>{item.rep || 'Unknown'}</div></td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <span className="text-sm font-semibold flex items-center gap-2">
-                            {getOutreachIcon(item.type)} {item.type}
-                          </span>
+                          <span className="text-sm font-semibold flex items-center gap-2">{getOutreachIcon(item.type)} {item.type}</span>
                           <span className="text-[10px] font-bold text-slate-400">{item.date}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className={`text-sm font-black ${parseFloat(item.growth) >= 0 ? 'text-[#37b87b]' : 'text-red-500'}`}>
-                          {parseFloat(item.growth) >= 0 ? '+' : ''}{item.growth}%
-                        </div>
+                        <div className={`text-sm font-black ${parseFloat(item.growth) >= 0 ? 'text-[#37b87b]' : 'text-red-500'}`}>{parseFloat(item.growth) >= 0 ? '+' : ''}{item.growth}%</div>
                         <div className="text-[10px] font-bold text-slate-400">${item.salesCurrent.toLocaleString()}</div>
                       </td>
                     </tr>
@@ -336,9 +292,7 @@ const App = () => {
           </div>
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-8">
-          {/* Rep Rankings */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <h2 className="text-sm font-black uppercase tracking-widest mb-6 border-b pb-4">Performance Standings</h2>
             <div className="space-y-4">
@@ -350,148 +304,54 @@ const App = () => {
                   </div>
                   <div className="text-right">
                     <span className="block text-[10px] font-black text-slate-400 uppercase">{rep.totalOutreach} Touches</span>
-                    <span className={`text-xs font-bold ${parseFloat(rep.avgGrowth) >= 0 ? 'text-[#37b87b]' : 'text-red-500'}`}>
-                      {rep.avgGrowth}%
-                    </span>
+                    <span className={`text-xs font-bold ${parseFloat(rep.avgGrowth) >= 0 ? 'text-[#37b87b]' : 'text-red-500'}`}>{rep.avgGrowth}%</span>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Strategy Insight */}
           <div className="bg-black text-white p-7 rounded-2xl shadow-xl relative overflow-hidden">
-            <div className="relative z-10">
-              <h2 className="text-sm font-black uppercase tracking-widest mb-5 flex items-center text-[#37b87b]">
-                <CheckCircle2 className="mr-2 w-4 h-4" /> Strategic Focus
-              </h2>
-              <div className="space-y-5">
-                <div className="border-l-2 border-[#37b87b] pl-4">
-                  <p className="text-[10px] font-black text-[#37b87b] uppercase mb-1">Growth Correlation</p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Partners with at least 1 "Visit" per month are showing 12% higher retention than digital-only accounts.
-                  </p>
-                </div>
-                <div className="border-l-2 border-slate-600 pl-4">
-                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Efficiency Tip</p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Always verify Partner names. Consolidating "ARCH" and "Arch Ortho" ensures accurate quarterly reporting.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white p-6 rounded-xl border border-slate-200">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Cloud Status</h3>
-            <div className="flex items-center gap-3 text-sm font-bold text-black">
-              <div className="w-2 h-2 rounded-full bg-[#37b87b] animate-pulse"></div>
-              Synced with Team Database
+            <h2 className="text-sm font-black uppercase tracking-widest mb-5 flex items-center text-[#37b87b]"><CheckCircle2 className="mr-2 w-4 h-4" /> Strategic Focus</h2>
+            <div className="space-y-5">
+              <div className="border-l-2 border-[#37b87b] pl-4"><p className="text-[10px] font-black text-[#37b87b] uppercase mb-1">Growth Correlation</p><p className="text-xs text-slate-300 leading-relaxed">Partners with at least 1 "Visit" per month show 12% higher retention.</p></div>
+              <div className="border-l-2 border-slate-600 pl-4"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Efficiency Tip</p><p className="text-xs text-slate-300 leading-relaxed">Consolidating partner names ensures accurate quarterly reporting.</p></div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Entry Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b flex justify-between items-center bg-slate-50">
-              <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
-                <FileText className="text-[#37b87b]" /> Log Activity
-              </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-black transition-colors">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            
+            <div className="p-6 border-b flex justify-between items-center bg-slate-50"><h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2"><FileText className="text-[#37b87b]" /> Log Activity</h2><button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-black"><X className="w-6 h-6" /></button></div>
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               <div className="space-y-1 relative">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Partner Name</label>
-                <input 
-                  required 
-                  name="partner" 
-                  value={formData.partner} 
-                  onChange={handleInputChange} 
-                  className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" 
-                  placeholder="e.g. ARCH Orthodontics" 
-                />
-                
-                {/* Fuzzy Match Suggestion Box */}
+                <input required name="partner" value={formData.partner} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="e.g. ARCH Orthodontics" />
                 {suggestion && (
                   <div className="absolute top-full left-0 right-0 z-10 mt-1 bg-[#37b87b] text-white p-3 rounded-lg shadow-xl animate-in slide-in-from-top-2">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-bold leading-tight">Is this the same as <span className="underline">{suggestion}</span>?</p>
-                        <div className="flex gap-3 mt-2">
-                          <button 
-                            type="button" 
-                            onClick={handleMatchSuggestion}
-                            className="bg-white text-[#37b87b] text-[10px] font-black px-2 py-1 rounded uppercase hover:bg-slate-100 transition-colors"
-                          >
-                            Yes, Match Name
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => setSuggestion(null)}
-                            className="text-white/80 text-[10px] font-bold uppercase"
-                          >
-                            No, New Partner
-                          </button>
-                        </div>
-                      </div>
+                    <p className="text-xs font-bold">Match <span className="underline">{suggestion}</span>?</p>
+                    <div className="flex gap-3 mt-2">
+                      <button type="button" onClick={handleMatchSuggestion} className="bg-white text-[#37b87b] text-[10px] font-black px-2 py-1 rounded uppercase">Yes</button>
+                      <button type="button" onClick={() => setSuggestion(null)} className="text-white/80 text-[10px] font-bold uppercase">No</button>
                     </div>
                   </div>
                 )}
               </div>
-
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Success Rep</label>
-                  <input required name="rep" value={formData.rep} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm bg-slate-50" placeholder="Your Name" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</label>
-                  <input type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" />
-                </div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Success Rep</label><input required name="rep" value={formData.rep} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm bg-slate-50" placeholder="Your Name" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</label><input type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" /></div>
               </div>
-
               <div className="grid grid-cols-2 gap-4 pt-3 border-t-2 border-slate-50">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-[#37b87b] uppercase tracking-widest flex items-center gap-1">
-                    <DollarSign className="w-3 h-3" /> Sales Current
-                  </label>
-                  <input type="number" name="salesCurrent" value={formData.salesCurrent} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="0.00" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                    <DollarSign className="w-3 h-3" /> Sales Previous
-                  </label>
-                  <input type="number" name="salesLast" value={formData.salesLast} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="0.00" />
-                </div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-[#37b87b] uppercase tracking-widest flex items-center gap-1"><DollarSign className="w-3 h-3" /> Sales Current</label><input type="number" name="salesCurrent" value={formData.salesCurrent} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="0.00" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><DollarSign className="w-3 h-3" /> Sales Previous</label><input type="number" name="salesLast" value={formData.salesLast} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="0.00" /></div>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Activity Type</label>
-                <select name="type" value={formData.type} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm bg-white">
-                  <option>Call</option>
-                  <option>Email</option>
-                  <option>Video</option>
-                  <option>In-Person Visit</option>
-                  <option>Text</option>
-                  <option>Other</option>
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</label><select name="type" value={formData.type} onChange={handleInputChange} className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm bg-white"><option>Call</option><option>Email</option><option>Video</option><option>In-Person Visit</option><option>Text</option><option>Other</option></select></div>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Conversation Notes</label>
-                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="Key points discussed..."></textarea>
-              </div>
-
-              <button type="submit" className="w-full bg-[#37b87b] hover:opacity-90 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-[0.98] mt-2 uppercase tracking-widest text-sm">
-                Sync to Cloud
-              </button>
+              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Notes</label><textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="2" className="w-full border-2 border-slate-100 rounded-lg p-2.5 focus:border-[#37b87b] outline-none font-bold text-sm" placeholder="Key points discussed..."></textarea></div>
+              <button type="submit" className="w-full bg-[#37b87b] hover:opacity-90 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-[0.98] mt-2 uppercase tracking-widest text-sm">Sync to Cloud</button>
             </form>
           </div>
         </div>
